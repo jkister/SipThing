@@ -234,6 +234,7 @@ while (1) {
             }
             for my $type (qw/cancel ack ok/){
                 $packet{$type} =~ s/%%totag%%/$opt{totag}/;
+                $packet{$type} =~ s/\x0D?\x0A/\x0D\x0A/g; # just easy to put here
             }
         }
 
@@ -249,7 +250,6 @@ while (1) {
              "--- \n",
              $packet{$resp},
              "--- \n" if $opt{Debug};
-        $packet{$resp} =~ s/\x0D?\x0A/\x0D\x0A/g;
         $sock->send($packet{$resp}) or die "$resp send error: $!\n";
 
     }else{

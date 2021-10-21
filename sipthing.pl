@@ -19,7 +19,7 @@ GetOptions( \%opt, 'Debug',
                    'mode=s',
                    'callid=s',
                    'branch=s',
-                   'tag=s',
+                   'fromtag=s',
                    'fromhost=s',
                    'tohost=s',
                    'allow=s',
@@ -41,7 +41,7 @@ $opt{useragent} ||= 'sipthing/0.51';
 $opt{mode}      ||= 'options';
 $opt{callid}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
-$opt{tag}       ||= join '', map { unpack 'H*', chr(rand(256)) } 1..8;
+$opt{fromtag}   ||= join '', map { unpack 'H*', chr(rand(256)) } 1..4;
 $opt{allow}     ||= 'INVITE, ACK, CANCEL, OPTIONS, BYE';
 
 if( $opt{indicator} ){
@@ -77,10 +77,10 @@ my $date = sprintf('%s, %02d %s %04d %02d:%02d:%02d',
                    ($year+1900),$hour,$min,$sec) . ' GMT';
 
 my @options = split "\n", <<__EOO__;
-OPTIONS sip:$opt{to}\@$peerhost:$peerport SIP/2.0
+OPTIONS sip:$peerhost:$peerport SIP/2.0
 Via: SIP/2.0/UDP $myhost;branch=$opt{branch}
 Contact: <sip:$opt{from}\@$myhost:$myport>
-From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;tag=$opt{tag}
+From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;fromtag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$peerport>
 Call-ID: $opt{callid}\@$myhost:$myport
 CSeq: 100 OPTIONS
@@ -115,9 +115,8 @@ my $length = length($sdp) + 12; # + for each line
 
 my @invite = split "\n", <<__EOI__;
 INVITE sip:$opt{to}\@$opt{tohost} SIP/2.0
-Record-Route: <sip:$myhost;lr=on;ftag=as5b8a6f2b;did=9d4.566a0624>
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
-From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{tag}
+From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>
 Contact: <sip:$opt{from}\@$opt{fromhost}>
 Call-ID: $opt{callid}\@$myhost:$myport
@@ -153,8 +152,8 @@ push @invite, ('', split("\n", $sdp), '');
 my $ok = <<__EOOK__;
 SIP/2.0 200 OK sip:$opt{to}\@$peerhost SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
-From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{tag}
-To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>
+From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
+To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
 Contact: <sip:$opt{from}\@$opt{fromhost}>
 Call-ID: $opt{callid}\@$myhost:$myport
 CSeq: 100 INVITE
@@ -164,24 +163,23 @@ Content-Length: 0
 __EOOK__
 
 my $cancel = <<__EOCANCEL__;
-CANCEL sip:$opt{to}\@$opt{tohost} SIP/2.0
+CANCEL sip:$opt{to}\@$opt{tohost}:$opt{port} SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
-From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{tag}
-To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>
+From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
+To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
 Contact: <sip:$opt{from}\@$opt{fromhost}>
 Call-ID: $opt{callid}\@$myhost:$myport
 CSeq: 100 CANCEL
 User-Agent: $opt{useragent}
 Content-Length: 0
 
-
 __EOCANCEL__
 
 my $ack = <<__EOACK__;
-ACK sip:$opt{to}\@$opt{tohost} SIP/2.0
+ACK sip:$opt{to}\@$opt{tohost}:$opt{port} SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
-From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{tag}
-To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>
+From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
+To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
 Call-ID: $opt{callid}\@$myhost:$myport
 CSeq: 100 ACK
 User-Agent: $opt{useragent}
@@ -200,7 +198,7 @@ $msg =~ s/\x0D?\x0A/\x0D\x0A/g;
 my $payload_size = length($msg);
 my $total_size = $payload_size + 20 + 8; # + ip header + udp header
 
-warn "**** TX $myhost:$myport -> $peerhost:$peerport\n",
+warn "**** TX [1] $myhost:$myport -> $peerhost:$peerport\n",
      "***** with $total_size byte packet ($payload_size byte payload):\n",
      "--- \n",
      $msg,
@@ -208,52 +206,54 @@ warn "**** TX $myhost:$myport -> $peerhost:$peerport\n",
 
 $sock->send($msg) or die "send error: $!\n";
 
-$sock->recv(my $pkt, 4096) or die "Recv error: $!\n";
-my $fl = (split /\r?\n/, $pkt)[0];
-print "**** RX $peerhost:$peerport -> $myhost:$myport\n";
-if( $opt{quiet} ){
-    print "$fl\n";
-}else{
-    print "--- \n",
-          $pkt,
-          "--- \n";
-}
 
-exit if $opt{mode} eq 'options';
-
-my $resp = ($fl =~ /3\d{2}/) ? 'ack' : 'ok';
-
-warn "**** TX $myhost:$myport -> $peerhost:$peerport\n",
-     "--- \n",
-     $packet{$resp},
-     "--- \n" if $opt{Debug};
-$resp =~ s/\x0D?\x0A/\x0D\x0A/g;
-$sock->send($resp) or die "ok send error: $!\n";
-
-
-unless( $resp eq 'ack' || $opt{nocancel} ){
-    warn "**** TX $myhost:$myport -> $peerhost:$peerport\n",
-         "--- \n",
-         $cancel,
-         "--- \n" if $opt{Debug};
-
-    $cancel =~ s/\x0D?\x0A/\x0D\x0A/g;
-    $sock->send($cancel) or die "cancel send error: $!\n";
-}
-
+my $tx = 1;
+my $loop = 1;
+my $rx = 0;
 while (1) {
     $sock->timeout(1);
     if( $sock->recv(my $pkt, 4096) ){
-        print "**** RX $peerhost:$peerport -> $myhost:$myport\n";
+        $rx++;
+        my $fl = (split /\r?\n/, $pkt)[0];
+        print "**** RX [$rx] $peerhost:$peerport -> $myhost:$myport\n";
         if( $opt{quiet} ){
-            my $fl = (split /\r?\n/, $pkt)[0];
             print "$fl\n";
         }else{
             print "--- \n",
                   $pkt,
                   "--- \n";
         }
+        exit if $opt{mode} eq 'options';
+
+        unless( $opt{totag} ){
+            for (split /\r?\n/, $pkt){
+                if( /^To:.+;tag=(\S+)/i ){
+                    $opt{totag} = $1;
+                    last;
+                }
+            }
+            for my $type (qw/cancel ack ok/){
+                $packet{$type} =~ s/%%totag%%/$opt{totag}/;
+            }
+        }
+
+        next if $fl =~ /487/; # it follows up with an OK
+        my $resp = ($fl =~ /[34]\d{2}/) ? 'ok' : 'ack';
+    
+        if( $loop eq 1 && ! $opt{nocancel} ){
+            $resp = 'cancel';
+        }
+
+        $tx++;
+        warn "**** TX [$tx] $myhost:$myport -> $peerhost:$peerport\n",
+             "--- \n",
+             $packet{$resp},
+             "--- \n" if $opt{Debug};
+        $packet{$resp} =~ s/\x0D?\x0A/\x0D\x0A/g;
+        $sock->send($packet{$resp}) or die "$resp send error: $!\n";
+
     }else{
         last;
     }
+    $loop++;
 }

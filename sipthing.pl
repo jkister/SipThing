@@ -118,13 +118,14 @@ __EOSDP__
 
 my $length = length($sdp) + 12 + 2; # +12 for each line\r and +2 for final empty line \r\n
 
+my @invite;
 if( $opt{sipfile} ){
     open(my $fh, $opt{sipfile}) || die "cannot open $opt{sipfile}: $!\n";
     chomp(@invite = <$fh>);
     close $fh;
     push @invite, "\n";
 }else{
-    my @invite = split "\n", <<__EOI__;
+    @invite = split "\n", <<__EOI__;
 INVITE $opt{ruri} SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
 From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}

@@ -31,6 +31,7 @@ GetOptions( \%opt, 'Debug',
                    'indicator=s',
                    'cseq=i',
                    'nocancel',
+                   'sipfile=s',
           );
                    
 $opt{host}      || die "specify --host <host>\n";
@@ -117,7 +118,13 @@ __EOSDP__
 
 my $length = length($sdp) + 12 + 2; # +12 for each line\r and +2 for final empty line \r\n
 
-my @invite = split "\n", <<__EOI__;
+if( $opt{sipfile} ){
+    open(my $fh, $opt{sipfile}) || die "cannot open $opt{sipfile}: $!\n";
+    chomp(@invite = <$fh>);
+    close $fh;
+    push @invite, "\n";
+}else{
+    my @invite = split "\n", <<__EOI__;
 INVITE $opt{ruri} SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
 From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
@@ -135,23 +142,24 @@ Content-Type: application/sdp
 Content-Length: $length
 __EOI__
 
-if( $opt{indicator} ){
-    push @invite, "P-Attestation-Indicator: $opt{indicator}";
+	if( $opt{indicator} ){
+	    push @invite, "P-Attestation-Indicator: $opt{indicator}";
+	}
+	if( $opt{identity} ){
+	    push @invite, "Identity: $opt{identity}";
+	}
+	if( $opt{pai} ){
+	    push @invite, "P-Asserted-Identity: <sip:$opt{from}\@$myhost:$myport>";
+	}
+	if( $opt{fromhost} ne $myhost ){
+	    push @invite, "Via: SIP/2.0/UDP $opt{fromhost}:5060;received=$opt{fromhost};branch=$opt{branch};rport=5060";
+	}
+	if( $opt{padding} ){
+	    push @invite, "X-Padding: " . 'A' x $opt{padding};
+	}
+	
+	push @invite, ('', split("\n", $sdp), "\n");
 }
-if( $opt{identity} ){
-    push @invite, "Identity: $opt{identity}";
-}
-if( $opt{pai} ){
-    push @invite, "P-Asserted-Identity: <sip:$opt{from}\@$myhost:$myport>";
-}
-if( $opt{fromhost} ne $myhost ){
-    push @invite, "Via: SIP/2.0/UDP $opt{fromhost}:5060;received=$opt{fromhost};branch=$opt{branch};rport=5060";
-}
-if( $opt{padding} ){
-    push @invite, "X-Padding: " . 'A' x $opt{padding};
-}
-
-push @invite, ('', split("\n", $sdp), "\n");
 
 my $ok = <<__EOOK__;
 SIP/2.0 200 OK sip:$opt{to}\@$peerhost SIP/2.0

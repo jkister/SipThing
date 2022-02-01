@@ -46,7 +46,6 @@ $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{fromtag}   ||= join '', map { unpack 'H*', chr(rand(256)) } 1..4;
 $opt{allow}     ||= 'INVITE, ACK, CANCEL, OPTIONS, BYE';
 $opt{cseq}      ||= int(rand(523288)) + 1000;
-$opt{ruri}      ||= 'sip:' . $opt{to} . '@' . $opt{tohost};
 
 if( $opt{indicator} ){
     $opt{indicator} = uc($opt{indicator});
@@ -71,6 +70,7 @@ my $peerport     = $sock->peerport();
 my $peerhost     = $sock->peerhost();
 $opt{fromhost} ||= $myhost;
 $opt{tohost}   ||= $peerhost;
+$opt{ruri}     ||= 'sip:' . $opt{to} . '@' . $opt{tohost};
 
 my @dmap = qw/Sun Mon Tue Wed Thu Fri Sat/;
 my @mmap = qw/Jan Feb Mar Arp May Jun Jul Aug Sep Oct Nov Dec/;

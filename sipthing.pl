@@ -12,6 +12,7 @@ GetOptions( \%opt, 'Debug',
                    'host=s',
                    'port=i',
                    'localport=i',
+                   'ruri=s',
                    'from=s',
                    'fromname=s',
                    'to=s',
@@ -28,6 +29,7 @@ GetOptions( \%opt, 'Debug',
                    'padding=i',
                    'identity=s',
                    'indicator=s',
+                   'cseq=i',
                    'nocancel',
           );
                    
@@ -43,6 +45,8 @@ $opt{callid}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{fromtag}   ||= join '', map { unpack 'H*', chr(rand(256)) } 1..4;
 $opt{allow}     ||= 'INVITE, ACK, CANCEL, OPTIONS, BYE';
+$opt{cseq}      ||= int(rand(523288)) + 1000;
+$opt{ruri}      ||= 'sip:' . $opt{to} . '@' . $opt{tohost};
 
 if( $opt{indicator} ){
     $opt{indicator} = uc($opt{indicator});
@@ -83,7 +87,7 @@ Contact: <sip:$opt{from}\@$myhost:$myport>
 From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;fromtag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$peerport>
 Call-ID: $opt{callid}\@$myhost:$myport
-CSeq: 100 OPTIONS
+CSeq: $opt{cseq} OPTIONS
 User-Agent: $opt{useragent}
 Date: $date
 Allow: $opt{allow}
@@ -111,16 +115,16 @@ a=ptime:20
 a=sendrecv
 __EOSDP__
 
-my $length = length($sdp) + 12; # + for each line
+my $length = length($sdp) + 12 + 2; # +12 for each line\r and +2 for final empty line \r\n
 
 my @invite = split "\n", <<__EOI__;
-INVITE sip:$opt{to}\@$opt{tohost} SIP/2.0
+INVITE $opt{ruri} SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
 From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>
 Contact: <sip:$opt{from}\@$opt{fromhost}>
 Call-ID: $opt{callid}\@$myhost:$myport
-CSeq: 100 INVITE
+CSeq: $opt{cseq} INVITE
 User-Agent: $opt{useragent}
 Max-Forwards: 69
 Remote-Party-ID: "$opt{from}" <sip:$opt{from}\@$opt{fromhost}>;privacy=off;screen=no
@@ -147,7 +151,7 @@ if( $opt{padding} ){
     push @invite, "X-Padding: " . 'A' x $opt{padding};
 }
 
-push @invite, ('', split("\n", $sdp), '');
+push @invite, ('', split("\n", $sdp), "\n");
 
 my $ok = <<__EOOK__;
 SIP/2.0 200 OK sip:$opt{to}\@$peerhost SIP/2.0
@@ -156,7 +160,7 @@ From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
 Contact: <sip:$opt{from}\@$opt{fromhost}>
 Call-ID: $opt{callid}\@$myhost:$myport
-CSeq: 100 INVITE
+CSeq: $opt{cseq} INVITE
 User-Agent: $opt{useragent}
 Content-Length: 0
 
@@ -169,7 +173,7 @@ From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
 Contact: <sip:$opt{from}\@$opt{fromhost}>
 Call-ID: $opt{callid}\@$myhost:$myport
-CSeq: 100 CANCEL
+CSeq: $opt{cseq} CANCEL
 User-Agent: $opt{useragent}
 Content-Length: 0
 
@@ -181,7 +185,7 @@ Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
 From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
 Call-ID: $opt{callid}\@$myhost:$myport
-CSeq: 100 ACK
+CSeq: $opt{cseq} ACK
 User-Agent: $opt{useragent}
 Content-Length: 0
 
@@ -239,7 +243,7 @@ while (1) {
         }
 
         next if $fl =~ /487/; # it follows up with an OK
-        my $resp = ($fl =~ /[34]\d{2}/) ? 'ok' : 'ack';
+        my $resp = ($fl =~ /[34]\d{2}/) ? 'ack' : 'ok';
     
         if( $loop eq 1 && ! $opt{nocancel} ){
             $resp = 'cancel';

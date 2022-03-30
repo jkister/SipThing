@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # have crude sip conversation
-# jkister 2021092701
+# jkister 2022030301
 
 use strict;
 use IO::Socket;
@@ -31,7 +31,9 @@ GetOptions( \%opt, 'Debug',
                    'indicator=s',
                    'cseq=i',
                    'nocancel',
-                   'sipfile=s',
+                   'sipfile=s', # NB some devices wont respond if date too old
+                   'limit=i',
+                   'extra=s@',
           );
                    
 $opt{host}      || die "specify --host <host>\n";
@@ -46,7 +48,8 @@ $opt{callid}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{fromtag}   ||= join '', map { unpack 'H*', chr(rand(256)) } 1..4;
 $opt{allow}     ||= 'INVITE, ACK, CANCEL, OPTIONS, BYE';
-$opt{cseq}      ||= int(rand(523288)) + 1000;
+$opt{cseq}      ||= int(rand(1024)) + 1;
+$opt{limit}     ||= 70;
 
 if( $opt{indicator} ){
     $opt{indicator} = uc($opt{indicator});
@@ -82,7 +85,7 @@ my $date = sprintf('%s, %02d %s %04d %02d:%02d:%02d',
                    ($year+1900),$hour,$min,$sec) . ' GMT';
 
 my @options = split "\n", <<__EOO__;
-OPTIONS sip:$peerhost:$peerport SIP/2.0
+OPTIONS $opt{ruri} SIP/2.0
 Via: SIP/2.0/UDP $myhost;branch=$opt{branch}
 Contact: <sip:$opt{from}\@$myhost:$myport>
 From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;fromtag=$opt{fromtag}
@@ -143,23 +146,26 @@ Content-Type: application/sdp
 Content-Length: $length
 __EOI__
 
-	if( $opt{indicator} ){
-	    push @invite, "P-Attestation-Indicator: $opt{indicator}";
-	}
-	if( $opt{identity} ){
-	    push @invite, "Identity: $opt{identity}";
-	}
-	if( $opt{pai} ){
-	    push @invite, "P-Asserted-Identity: <sip:$opt{from}\@$myhost:$myport>";
-	}
-	if( $opt{fromhost} ne $myhost ){
-	    push @invite, "Via: SIP/2.0/UDP $opt{fromhost}:5060;received=$opt{fromhost};branch=$opt{branch};rport=5060";
-	}
-	if( $opt{padding} ){
-	    push @invite, "X-Padding: " . 'A' x $opt{padding};
-	}
-	
-	push @invite, ('', split("\n", $sdp), "\n");
+    if( $opt{indicator} ){
+        push @invite, "P-Attestation-Indicator: $opt{indicator}";
+    }
+    if( $opt{identity} ){
+        push @invite, "Identity: $opt{identity}";
+    }
+    if( $opt{pai} ){
+        push @invite, "P-Asserted-Identity: <sip:$opt{from}\@$myhost:$myport>";
+    }
+    if( $opt{fromhost} ne $myhost ){
+        push @invite, "Via: SIP/2.0/UDP $opt{fromhost}:5060;received=$opt{fromhost};branch=$opt{branch};rport=5060";
+    }
+    if( $opt{padding} ){
+        push @invite, "X-Padding: " . 'A' x $opt{padding};
+    }
+    for my $field (@{ $opt{extra} }){
+        push @invite, $field;
+    }
+    
+    push @invite, ('', split("\n", $sdp), "\n");
 }
 
 my $ok = <<__EOOK__;
@@ -223,7 +229,7 @@ $sock->send($msg) or die "send error: $!\n";
 my $tx = 1;
 my $loop = 1;
 my $rx = 0;
-while (1) {
+while( $loop <= $opt{limit} ){
     $sock->timeout(1);
     if( $sock->recv(my $pkt, 4096) ){
         $rx++;

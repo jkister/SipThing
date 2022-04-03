@@ -77,7 +77,7 @@ $opt{tohost}   ||= $peerhost;
 $opt{ruri}     ||= 'sip:' . $opt{to} . '@' . $opt{tohost};
 
 my @dmap = qw/Sun Mon Tue Wed Thu Fri Sat/;
-my @mmap = qw/Jan Feb Mar Arp May Jun Jul Aug Sep Oct Nov Dec/;
+my @mmap = qw/Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec/;
 my ($sec,$min,$hour,$mday,$mon,$year,$wday) = (gmtime())[0,1,2,3,4,5,6];
 
 my $date = sprintf('%s, %02d %s %04d %02d:%02d:%02d',

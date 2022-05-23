@@ -5,7 +5,7 @@
 
 use strict;
 use IO::Socket;
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case); # -D debug vs date
 
 my %opt;
 GetOptions( \%opt, 'Debug',
@@ -34,7 +34,10 @@ GetOptions( \%opt, 'Debug',
                    'sipfile=s', # NB some devices wont respond if date too old
                    'limit=i',
                    'extra=s@',
+                   'date=s', # .. some wont respond if date too old
           );
+
+# date can be like: date --date="2 min ago" +'%a, %d %b %Y %H:%M:%S %Z'
                    
 $opt{host}      || die "specify --host <host>\n";
 $opt{port}      ||= 5060;
@@ -48,8 +51,8 @@ $opt{callid}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{fromtag}   ||= join '', map { unpack 'H*', chr(rand(256)) } 1..4;
 $opt{allow}     ||= 'INVITE, ACK, CANCEL, OPTIONS, BYE';
-$opt{cseq}      ||= int(rand(1024)) + 1;
-$opt{limit}     ||= 70;
+$opt{cseq}      ||= int(rand(128)) + 1;
+$opt{limit}       = 70 unless defined $opt{limit}; # could be 0
 
 if( $opt{indicator} ){
     $opt{indicator} = uc($opt{indicator});
@@ -80,9 +83,9 @@ my @dmap = qw/Sun Mon Tue Wed Thu Fri Sat/;
 my @mmap = qw/Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec/;
 my ($sec,$min,$hour,$mday,$mon,$year,$wday) = (gmtime())[0,1,2,3,4,5,6];
 
-my $date = sprintf('%s, %02d %s %04d %02d:%02d:%02d',
-                   $dmap[$wday], $mday, $mmap[$mon],
-                   ($year+1900),$hour,$min,$sec) . ' GMT';
+my $date = $opt{date} ? $opt{date} : sprintf('%s, %02d %s %04d %02d:%02d:%02d',
+                                      $dmap[$wday], $mday, $mmap[$mon],
+                                      ($year+1900),$hour,$min,$sec) . ' GMT';
 
 my @options = split "\n", <<__EOO__;
 OPTIONS $opt{ruri} SIP/2.0
@@ -101,7 +104,7 @@ __EOO__
 if( $opt{padding} ){
     push @options, "X-Padding: " . 'A' x $opt{padding};
 }
-push @options, '';
+push @options, "\n";
 
 
 my $sdp = <<__EOSDP__;
@@ -256,6 +259,8 @@ while( $loop <= $opt{limit} ){
                 $packet{$type} =~ s/\x0D?\x0A/\x0D\x0A/g; # just easy to put here
             }
         }
+
+        last if $opt{limit} eq 1; # we sent one packet, we received one packet.
 
         next if $fl =~ /487/; # it follows up with an OK
         my $resp = ($fl =~ /[34]\d{2}/) ? 'ack' : 'ok';

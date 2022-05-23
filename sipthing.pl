@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # have crude sip conversation
-# jkister 2022030301
+# jkister 2022052301
 
 use strict;
 use IO::Socket;
@@ -91,7 +91,7 @@ my @options = split "\n", <<__EOO__;
 OPTIONS $opt{ruri} SIP/2.0
 Via: SIP/2.0/UDP $myhost;branch=$opt{branch}
 Contact: <sip:$opt{from}\@$myhost:$myport>
-From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;fromtag=$opt{fromtag}
+From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$peerport>
 Call-ID: $opt{callid}\@$myhost:$myport
 CSeq: $opt{cseq} OPTIONS

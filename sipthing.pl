@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # have crude sip conversation
-# jkister 2022052301
+# jkister 2023060901
 
 use strict;
 use IO::Socket;
@@ -35,6 +35,8 @@ GetOptions( \%opt, 'Debug',
                    'limit=i',
                    'extra=s@',
                    'date=s', # .. some wont respond if date too old
+                   'contact_user=s',
+                   'contact_host=s',
           );
 
 # date can be like: date --date="2 min ago" +'%a, %d %b %Y %H:%M:%S %Z'
@@ -45,7 +47,8 @@ $opt{localport} ||= int(rand(55534)) + 10001;
 $opt{from}      ||= 'sipthing';
 $opt{fromname}  ||= $opt{from};
 $opt{to}        ||= $opt{from};
-$opt{useragent} ||= 'sipthing/0.52';
+$opt{contact_user} ||= $opt{from};
+$opt{useragent} ||= 'sipthing/0.54';
 $opt{mode}      ||= 'options';
 $opt{callid}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
@@ -75,9 +78,10 @@ my $myport       = $sock->sockport();
 my $myhost       = $sock->sockhost();
 my $peerport     = $sock->peerport();
 my $peerhost     = $sock->peerhost();
-$opt{fromhost} ||= $myhost;
-$opt{tohost}   ||= $peerhost;
-$opt{ruri}     ||= 'sip:' . $opt{to} . '@' . $opt{tohost};
+$opt{fromhost}     ||= $myhost;
+$opt{contact_host} ||= $opt{fromhost};
+$opt{tohost}       ||= $peerhost;
+$opt{ruri}         ||= 'sip:' . $opt{to} . '@' . $opt{tohost};
 
 my @dmap = qw/Sun Mon Tue Wed Thu Fri Sat/;
 my @mmap = qw/Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec/;
@@ -89,11 +93,11 @@ my $date = $opt{date} ? $opt{date} : sprintf('%s, %02d %s %04d %02d:%02d:%02d',
 
 my @options = split "\n", <<__EOO__;
 OPTIONS $opt{ruri} SIP/2.0
-Via: SIP/2.0/UDP $myhost;branch=$opt{branch}
-Contact: <sip:$opt{from}\@$myhost:$myport>
-From: "$opt{fromname}" <sip:$opt{from}\@$myhost:$myport>;tag=$opt{fromtag}
+Via: SIP/2.0/UDP $opt{fromhost}:${myport};branch=$opt{branch}
+Contact: <sip:$opt{contact_user}\@$opt{contact_host}:$myport>
+From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}:$myport>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$peerport>
-Call-ID: $opt{callid}\@$myhost:$myport
+Call-ID: $opt{callid}\@$opt{fromhost}:$myport
 CSeq: $opt{cseq} OPTIONS
 User-Agent: $opt{useragent}
 Date: $date
@@ -133,11 +137,11 @@ if( $opt{sipfile} ){
 }else{
     @invite = split "\n", <<__EOI__;
 INVITE $opt{ruri} SIP/2.0
-Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
+Via: SIP/2.0/UDP $opt{fromhost}:$myport;branch=$opt{branch}
 From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>
-Contact: <sip:$opt{from}\@$opt{fromhost}>
-Call-ID: $opt{callid}\@$myhost:$myport
+Contact: <sip:$opt{contact_user}\@$opt{contact_host}:$myport>
+Call-ID: $opt{callid}\@$opt{fromhost}:$myport
 CSeq: $opt{cseq} INVITE
 User-Agent: $opt{useragent}
 Max-Forwards: 69

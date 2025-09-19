@@ -8,7 +8,7 @@ use IO::Socket;
 use Getopt::Long qw(:config no_ignore_case); # -D debug vs date
 
 my %opt;
-GetOptions( \%opt, 'Debug',
+GetOptions( \%opt, 'debug|D',
                    'host=s',
                    'port=i',
                    'localport=i',
@@ -48,7 +48,7 @@ $opt{from}      ||= 'sipthing';
 $opt{fromname}  ||= $opt{from};
 $opt{to}        ||= $opt{from};
 $opt{contact_user} ||= $opt{from};
-$opt{useragent} ||= 'sipthing/0.54';
+$opt{useragent} ||= 'sipthing/0.55';
 $opt{mode}      ||= 'options';
 $opt{callid}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
 $opt{branch}    ||= join '', map { unpack 'H*', chr(rand(256)) } 1..16;
@@ -202,7 +202,7 @@ Content-Length: 0
 __EOCANCEL__
 
 my $ack = <<__EOACK__;
-ACK sip:$opt{to}\@$opt{tohost}:$opt{port} SIP/2.0
+ACK %%ackuri%% SIP/2.0
 Via: SIP/2.0/UDP $myhost:$myport;branch=$opt{branch}
 From: "$opt{fromname}" <sip:$opt{from}\@$opt{fromhost}>;tag=$opt{fromtag}
 To: <sip:$opt{to}\@$opt{tohost}:$opt{port}>;tag=%%totag%%
@@ -224,11 +224,11 @@ $msg =~ s/\x0D?\x0A/\x0D\x0A/g;
 my $payload_size = length($msg);
 my $total_size = $payload_size + 20 + 8; # + ip header + udp header
 
-warn "**** TX [1] $myhost:$myport -> $peerhost:$peerport\n",
-     "***** with $total_size byte packet ($payload_size byte payload):\n",
-     "--- \n",
-     $msg,
-     "--- \n" if $opt{Debug};
+debug( "**** TX [1] $myhost:$myport -> $peerhost:$peerport\n",
+       "***** with $total_size byte packet ($payload_size byte payload):\n",
+       "--- \n",
+       $msg,
+       "--- ");
 
 $sock->send($msg) or die "send error: $!\n";
 
@@ -252,36 +252,54 @@ while( $loop <= $opt{limit} ){
         exit if $opt{mode} eq 'options';
 
         unless( $opt{totag} ){
-            for (split /\r?\n/, $pkt){
-                if( /^To:.+;tag=(\S+)/i ){
-                    $opt{totag} = $1;
-                    last;
+            if( $pkt =~ /^To:.+;tag=(\S+)/im ){
+                $opt{totag} = $1;
+                for my $type (qw/cancel ack ok/){
+                    $packet{$type} =~ s/%%totag%%/$opt{totag}/;
+                    $packet{$type} =~ s/\x0D?\x0A/\x0D\x0A/g; # just easy to put here
                 }
             }
-            for my $type (qw/cancel ack ok/){
-                $packet{$type} =~ s/%%totag%%/$opt{totag}/;
-                $packet{$type} =~ s/\x0D?\x0A/\x0D\x0A/g; # just easy to put here
+        }
+
+        unless( $opt{ackuri} ){
+            if( $pkt =~ /^Contact: <([^>]+)>/im ){
+                $opt{ackuri} = $1;
+                $packet{ack} =~ s/%%ackuri%%/$opt{ackuri}/;
+                last;
             }
         }
 
         last if $opt{limit} eq 1; # we sent one packet, we received one packet.
 
-        next if $fl =~ /487/; # it follows up with an OK
-        my $resp = ($fl =~ /[34]\d{2}/) ? 'ack' : 'ok';
+        next if $fl =~ /\s+1\d{2}\s+/; # info only
+        next if $fl =~ /^ACK\s+/; # no response needed to ACK
+        next if $fl =~ /\s+487\s+/; # it follows up with an OK
+        my $resp = ($fl =~ /\s+(200|[34]\d{2}\s+)/) ? 'ack' : 'ok';
+
+        debug( "resp is: $resp (based on: $fl" );
     
         if( $loop eq 1 && ! $opt{nocancel} ){
             $resp = 'cancel';
         }
 
         $tx++;
-        warn "**** TX [$tx] $myhost:$myport -> $peerhost:$peerport\n",
-             "--- \n",
-             $packet{$resp},
-             "--- \n" if $opt{Debug};
+        debug( "**** TX [$tx] $myhost:$myport -> $peerhost:$peerport\n",
+               "--- \n",
+               $packet{$resp},
+               "--- " );
         $sock->send($packet{$resp}) or die "$resp send error: $!\n";
 
     }else{
         last;
     }
     $loop++;
+}
+
+sub verbose {
+    my ($msg) = join('', @_);
+    warn "$msg\n";
+}
+
+sub debug {
+    verbose @_ if $opt{debug};
 }
